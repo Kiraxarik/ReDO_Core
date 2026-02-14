@@ -1,0 +1,98 @@
+{
+    "editor.tabSize": 4,
+    "editor.insertSpaces": true,
+    "editor.detectIndentation": false,
+    "files.encoding": "utf8",
+    "files.eol": "\n",
+    "files.trimTrailingWhitespace": true,
+    "files.insertFinalNewline": true,
+
+    "Lua.diagnostics.globals": [
+        "Config",
+        "Framework",
+        "Citizen",
+        "Wait",
+        "CreateThread",
+        "SetTimeout",
+        "RegisterNetEvent",
+        "AddEventHandler",
+        "RegisterServerEvent",
+        "TriggerEvent",
+        "TriggerServerEvent",
+        "TriggerClientEvent",
+        "TriggerLatentClientEvent",
+        "TriggerLatentServerEvent",
+        "RemoveEventHandler",
+        "GetPlayers",
+        "GetPlayerServerId",
+        "GetPlayerIdentifiers",
+        "GetPlayerIdentifierByType",
+        "GetPlayerName",
+        "GetPlayerPed",
+        "GetPlayerEndpoint",
+        "GetPlayerTokens",
+        "exports",
+        "GetCurrentResourceName",
+        "GetResourceState",
+        "GetInvokingResource",
+        "GetNumPlayerIndices",
+        "GetPlayerLastMsg",
+        "IsDuplicityVersion",
+        "NetworkIsSessionStarted",
+        "MySQL",
+        "vector2",
+        "vector3",
+        "vector4",
+        "vec",
+        "vec2",
+        "vec3",
+        "vec4",
+        "json",
+        "msgpack",
+        "PlayerId",
+        "NetworkIsSessionStarted",
+        "NetworkIsPlayerActive"
+    ],
+
+    "Lua.workspace.library": [
+        ".vscode/lua-addons"
+    ],
+
+
+    "Lua.runtime.version": "Lua 5.4",
+    "Lua.workspace.checkThirdParty": false,
+    "Lua.diagnostics.disable": [
+        "lowercase-global"
+    ],
+    "Lua.signatureHelp.enable": true,
+    "Lua.completion.enable": true,
+    "Lua.completion.callSnippet": "Both",
+
+    "editor.formatOnSave": false,
+    "files.autoSave": "afterDelay",
+    "files.autoSaveDelay": 1000,
+    "editor.bracketPairColorization.enabled": true,
+    "editor.renderWhitespace": "boundary",
+    "editor.minimap.enabled": true,
+    "editor.lineNumbers": "on",
+    "editor.wordWrap": "off",
+
+    "files.exclude": {
+        "**/.git": true,
+        "**/.DS_Store": true,
+        "**/node_modules": true,
+        "**/*.log": true
+    },
+
+    "search.exclude": {
+        "**/node_modules": true,
+        "**/*.log": true
+    },
+
+    "git.autofetch": true,
+    "git.confirmSync": false,
+    "git.enableSmartCommit": true,
+    "breadcrumbs.enabled": true,
+    "explorer.confirmDelete": false,
+    "explorer.confirmDragAndDrop": false
+}
