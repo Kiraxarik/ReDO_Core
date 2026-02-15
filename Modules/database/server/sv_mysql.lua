@@ -53,7 +53,7 @@ function ReDOCore.MySQL.Initialize()
     end
     
     if mysqlResource then
-        ReDOCore.Info("Detected MySQL resource: %s", mysqlResource)
+        ReDOCore.DebugFlag('SQL_Connection', "Detected MySQL resource: %s", mysqlResource)
         isConnected = true
         return true
     else

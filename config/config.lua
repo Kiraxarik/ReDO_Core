@@ -106,15 +106,37 @@ Config.Authorization = {
 
 -- Logging Configuration
 Config.Logging = {
-    Level = "DEBUG", -- TRACE, DEBUG, INFO, WARN, ERROR
+    Level = "INFO", -- TRACE, DEBUG, INFO, WARN, ERROR
     
-    -- Log specific events
-    LogPlayerConnections = true,
+    -- Master debug switch - set false to silence ALL debug logs
+    Debug = true,
+    
+    -- Granular debug categories (only active when Debug = true)
+    DebugFlags = {
+        -- SQL / Database
+        SQL_TableCreation   = false, -- Table CREATE/DROP operations
+        SQL_TableExists     = false, -- Table existence checks
+        SQL_Queries         = false, -- Raw SQL query output
+        SQL_SchemaRegister  = true,  -- Schema registration and queuing
+        SQL_Connection      = true,  -- MySQL connection status
+
+        -- Players
+        Player_Auth         = true,  -- Player authorization flow
+        Player_Load         = true,  -- Player data loading
+        Player_Save         = false, -- Player data saving (spammy)
+        
+        -- Server
+        Server_Callbacks    = false, -- Server callback system
+        Server_Events       = false, -- Event triggers
+    },
+    
+    -- Standard event logging (always shown at INFO level)
+    LogPlayerConnections    = true,
     LogPlayerDisconnections = true,
     LogAuthorizationAttempts = true,
-    LogPermissionChecks = false, -- Can be spammy
-    LogMoneyTransactions = true,
-    LogAdminCommands = true
+    LogPermissionChecks     = false,
+    LogMoneyTransactions    = true,
+    LogAdminCommands        = true
 }
 
 -- Database Configuration

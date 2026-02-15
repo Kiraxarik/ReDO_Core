@@ -14,54 +14,39 @@ CreateThread(function()
     Wait(1000) -- Wait for MySQL to be ready
     
     ReDOCore.Info("Initializing database system...")
-    
-    -- Initialize MySQL connection
     ReDOCore.MySQL.Initialize()
-    
-    -- Wait for connection
     Wait(500)
     
-    -- Create core tables first
+    -- Create core tables only
+    local coreTablesReady = false
     ReDOCore.DB.CreateAllTables(function(success)
         if not success then
             ReDOCore.Error("Database initialization failed!")
             return
         end
-        
         ReDOCore.Info("Core tables ready!")
-        
-        -- Mark database as ready so RegisterSchema works immediately
-        dbReady = true
-        
-        -- Process any schemas that were registered before db was ready
-        if #pendingSchemas > 0 then
-            ReDOCore.Info("Creating %d table(s) registered by other resources...", #pendingSchemas)
-            for _, tableName in ipairs(pendingSchemas) do
-                ReDOCore.DB.CreateTable(tableName)
-            end
-            pendingSchemas = {}
-        end
-        
-        ReDOCore.Info("Database ready!")
-        TriggerEvent('framework:database:ready')
+        coreTablesReady = true
     end)
-end)
-
--- When any resource starts, process its schemas immediately
-AddEventHandler('onResourceStart', function(resourceName)
-    -- Skip the core itself
-    if resourceName == GetCurrentResourceName() then return end
     
-    ReDOCore.Debug("Resource started: %s | dbReady: %s | pending: %d", resourceName, tostring(dbReady), #pendingSchemas)
+    -- Wait for core tables to finish
+    local timeout = 0
+    while not coreTablesReady do
+        Wait(100)
+        timeout = timeout + 100
+        if timeout > 10000 then
+            ReDOCore.Error("Timed out waiting for core tables!")
+            return
+        end
+    end
     
-    -- Give the resource a moment to call RegisterSchema
-    Wait(500)
+    -- Mark database as ready immediately
+    dbReady = true
+    ReDOCore.Info("Database ready! Accepting schema registrations.")
+    TriggerEvent('framework:database:ready')
     
-    ReDOCore.Debug("After wait | pending: %d", #pendingSchemas)
-    
-    -- Create any tables it registered
+    -- Process anything already queued
     if #pendingSchemas > 0 then
-        ReDOCore.Info("Resource '%s' registered %d table(s), creating...", resourceName, #pendingSchemas)
+        ReDOCore.Info("Creating %d queued table(s)...", #pendingSchemas)
         for _, tableName in ipairs(pendingSchemas) do
             ReDOCore.DB.CreateTable(tableName)
         end
@@ -70,21 +55,26 @@ AddEventHandler('onResourceStart', function(resourceName)
 end)
 
 -- Register a schema and auto-create the table
+-- Works at ANY time - before or after database is ready
 function ReDOCore.DB.RegisterSchema(tableName, schema)
     if not tableName or not schema then
         ReDOCore.Error("RegisterSchema: tableName and schema required")
         return
     end
     
-    -- Add to schema list
     ReDOCore.DB.Schema[tableName] = schema
-    ReDOCore.Debug("Schema registered: %s", tableName)
+    ReDOCore.DebugFlag('SQL_SchemaRegister', "Schema registered: %s | dbReady: %s", tableName, tostring(dbReady))
+    
+    -- Skip if this is a core schema (already handled by CreateAllTables)
+    if ReDOCore.DB.CoreSchemas[tableName] then
+        return
+    end
     
     if dbReady then
-        -- Database is ready - create immediately
+        ReDOCore.Info("Creating table from schema: %s", tableName)
         ReDOCore.DB.CreateTable(tableName)
     else
-        -- Queue it until database is ready
+        ReDOCore.DebugFlag('SQL_SchemaRegister', "Queuing table: %s", tableName)
         table.insert(pendingSchemas, tableName)
     end
 end

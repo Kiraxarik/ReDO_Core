@@ -12,13 +12,22 @@ ReDOCore.String = ReDOCore.String or {}
 ReDOCore.Table = ReDOCore.Table or {}
 
 local function getLogLevel()
-    -- Safety check - if Config doesn't exist yet, default to INFO
     if not Config or not Config.Logging or not Config.Logging.Level then
         return ReDOCore.LogLevels.INFO
     end
-    
-    local configLevel = Config.Logging.Level or "INFO"
-    return ReDOCore.LogLevels[configLevel] or ReDOCore.LogLevels.INFO
+    return ReDOCore.LogLevels[Config.Logging.Level] or ReDOCore.LogLevels.INFO
+end
+
+local function isDebugEnabled()
+    if not Config or not Config.Logging then return false end
+    return Config.Logging.Debug == true
+end
+
+local function isDebugFlagEnabled(flag)
+    if not isDebugEnabled() then return false end
+    if not Config.Logging.DebugFlags then return true end -- No flags defined = show all
+    if Config.Logging.DebugFlags[flag] == nil then return true end -- Unknown flag = show
+    return Config.Logging.DebugFlags[flag] == true
 end
 
 function ReDOCore.Trace(msg, ...)
@@ -28,6 +37,15 @@ function ReDOCore.Trace(msg, ...)
 end
 
 function ReDOCore.Debug(msg, ...)
+    if not isDebugEnabled() then return end
+    if ReDOCore.LogLevels.DEBUG >= getLogLevel() then
+        print(string.format("^5[DEBUG]^7 " .. msg, ...))
+    end
+end
+
+-- Debug with a specific flag - only prints if that flag is enabled
+function ReDOCore.DebugFlag(flag, msg, ...)
+    if not isDebugFlagEnabled(flag) then return end
     if ReDOCore.LogLevels.DEBUG >= getLogLevel() then
         print(string.format("^5[DEBUG]^7 " .. msg, ...))
     end

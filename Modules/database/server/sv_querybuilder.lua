@@ -15,43 +15,11 @@
 ReDOCore.DB = ReDOCore.DB or {}
 ReDOCore.DB.Tables = {}
 ReDOCore.DB.Schema = {}
+ReDOCore.DB.CoreSchemas = {} -- Tracks which schemas belong to the core
 
---[[
-    ============================================================================
-    TABLE SCHEMA DEFINITIONS
-    ============================================================================
-    
-    Define your tables here. The system will auto-create them!
-]]
-
--- Define the players table structure
-ReDOCore.DB.Schema.players = {
-    id = { type = "INT", auto_increment = true, primary = true },
-    identifier = { type = "VARCHAR", length = 50, unique = true, not_null = true },
-    license = { type = "VARCHAR", length = 50, unique = true, not_null = true },
-    name = { type = "VARCHAR", length = 100, not_null = true },
-    ['group'] = { type = "VARCHAR", length = 50, default = "user" },
-    cash = { type = "INT", default = 500 },
-    bank = { type = "INT", default = 0 },
-    gold = { type = "INT", default = 0 },
-    position = { type = "TEXT" },
-    metadata = { type = "TEXT" },
-    last_seen = { type = "TIMESTAMP", default = "CURRENT_TIMESTAMP", on_update = "CURRENT_TIMESTAMP" }
-}
-
--- Example: Vehicles table (commented out - this is just an example)
---[[
-ReDOCore.DB.Schema.vehicles = {
-    id = { type = "INT", auto_increment = true, primary = true },
-    owner = { type = "VARCHAR", length = 50, not_null = true },
-    model = { type = "VARCHAR", length = 50, not_null = true },
-    plate = { type = "VARCHAR", length = 10, unique = true, not_null = true },
-    garage = { type = "VARCHAR", length = 50 },
-    stored = { type = "TINYINT", default = 1 },
-    damage = { type = "TEXT" },
-    created_at = { type = "TIMESTAMP", default = "CURRENT_TIMESTAMP" }
-}
-]]
+-- NOTE: Table schemas are defined in their respective modules
+-- Example: modules/player defines the players table
+--          modules/inventory defines the inventory table
 
 --[[
     ============================================================================
@@ -114,14 +82,12 @@ local function GenerateCreateTableSQL(tableName, schema)
     -- Add primary key
     if #primaryKeys > 0 then
         local pkLine = "PRIMARY KEY (" .. table.concat(primaryKeys, ", ") .. ")"
-        ReDOCore.Debug("Adding PRIMARY KEY line: %s", pkLine)
         table.insert(columns, pkLine)
     end
     
     -- Add unique keys
     for _, key in ipairs(uniqueKeys) do
         local ukLine = "UNIQUE KEY (" .. key .. ")"
-        ReDOCore.Debug("Adding UNIQUE KEY line: %s", ukLine)
         table.insert(columns, ukLine)
     end
     
@@ -155,7 +121,7 @@ function ReDOCore.DB.CreateTable(tableName, callback)
     -- Check if table already exists
     ReDOCore.DB.TableExists(tableName, function(exists)
         if exists then
-            ReDOCore.Debug("Table '%s' already exists, skipping creation", tableName)
+            ReDOCore.DebugFlag('SQL_TableExists', "Table '%s' already exists, skipping creation", tableName)
             if callback then callback(true) end
             return
         end
@@ -164,7 +130,7 @@ function ReDOCore.DB.CreateTable(tableName, callback)
         local sql = GenerateCreateTableSQL(tableName, schema)
         
         ReDOCore.Info("Creating table: %s", tableName)
-        ReDOCore.Debug("SQL: %s", sql)
+        ReDOCore.DebugFlag('SQL_Queries', "SQL: %s", sql)
         
         ReDOCore.MySQL.Execute(sql, {}, function(result)
             if result ~= nil then
@@ -195,12 +161,12 @@ function ReDOCore.DB.DropTable(tableName, callback)
     end)
 end
 
--- Create all defined tables
+-- Create all defined CORE tables only
 function ReDOCore.DB.CreateAllTables(callback)
     ReDOCore.Info("Creating all defined tables...")
     
     local tables = {}
-    for tableName, _ in pairs(ReDOCore.DB.Schema) do
+    for tableName, _ in pairs(ReDOCore.DB.CoreSchemas) do
         table.insert(tables, tableName)
     end
     
