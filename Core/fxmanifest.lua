@@ -7,7 +7,6 @@ lua54 'yes'
 description 'ReDOCore - Core'
 version '0.1.0'
 
--- Load in this exact order!
 shared_scripts {
     'config/config.lua',
     'shared/sh_main.lua',
