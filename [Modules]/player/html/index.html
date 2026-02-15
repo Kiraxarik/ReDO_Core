@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ReDO - Character Selection</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <!-- 
+        This is the character selection screen.
+        It's a standard HTML page that runs inside the game.
+        FiveM/RedM renders it as an overlay on top of the game.
+        
+        Communication with Lua:
+        - Lua sends data via SendNUIMessage() → we catch it in window.addEventListener('message')
+        - We send data back via fetch('https://cfx-nui-player/callbackName') → Lua catches it with RegisterNUICallback
+    -->
+
+    <div id="app" class="hidden">
+        <!-- MAIN CHARACTER SELECT SCREEN -->
+        <div id="char-select" class="panel">
+            <h1>ReDO Framework</h1>
+            <h2>Select Your Character</h2>
+            
+            <!-- Character list gets populated by JavaScript -->
+            <div id="character-list"></div>
+            
+            <!-- New character button (hidden if at max) -->
+            <button id="btn-new-char" class="btn btn-create" onclick="showCreateForm()">
+                + Create New Character
+            </button>
+        </div>
+
+        <!-- CREATE CHARACTER FORM (hidden by default) -->
+        <div id="create-form" class="panel hidden">
+            <h2>Create Character</h2>
+            
+            <div class="form-group">
+                <label for="first-name">First Name</label>
+                <input type="text" id="first-name" placeholder="John" maxlength="50">
+            </div>
+            
+            <div class="form-group">
+                <label for="last-name">Last Name</label>
+                <input type="text" id="last-name" placeholder="Marston" maxlength="50">
+            </div>
+
+            <div class="form-buttons">
+                <button class="btn btn-create" onclick="createCharacter()">Create</button>
+                <button class="btn btn-cancel" onclick="hideCreateForm()">Cancel</button>
+            </div>
+
+            <p id="create-error" class="error hidden"></p>
+        </div>
+
+        <!-- DELETE CONFIRMATION (hidden by default) -->
+        <div id="delete-confirm" class="panel hidden">
+            <h2>Delete Character</h2>
+            <p>Are you sure you want to delete <strong id="delete-char-name"></strong>?</p>
+            <p class="warning">This cannot be undone!</p>
+            <div class="form-buttons">
+                <button class="btn btn-delete" onclick="confirmDelete()">Delete Forever</button>
+                <button class="btn btn-cancel" onclick="hideDeleteConfirm()">Cancel</button>
+            </div>
+        </div>
+
+        <!-- STATUS MESSAGE -->
+        <p id="status-msg" class="status hidden"></p>
+    </div>
+
+    <script src="script.js"></script>
+</body>
+</html>

@@ -25,12 +25,5 @@ server_scripts {
     'server/sv_events.lua'
 }
 
-exports {
-    'getSharedObject',
-    'GetCoreObject'
-}
-
-server_exports {
-    'getSharedObject',
-    'GetCoreObject'
-}
+-- Note: exports are registered via exports() calls in sv_main.lua and cl_main.lua
+-- rather than declared here, for reliability with lua54 mode.

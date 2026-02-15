@@ -1,0 +1,228 @@
+/* 
+    Character Selection Styles
+    Dark, western-themed UI that fits the Red Dead aesthetic.
+    
+    The entire page is an overlay on top of the game.
+    The background is transparent so you can see the game world
+    (and the cinematic camera) behind the UI.
+*/
+
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+body {
+    font-family: 'Georgia', 'Times New Roman', serif;
+    color: #e8dcc8;
+    background: transparent;
+    height: 100vh;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    overflow: hidden;
+}
+
+/* Main container — centered on screen */
+#app {
+    width: 420px;
+    max-height: 80vh;
+    overflow-y: auto;
+}
+
+/* Panel = any card/box on screen */
+.panel {
+    background: rgba(15, 12, 8, 0.92);
+    border: 1px solid rgba(139, 109, 56, 0.4);
+    border-radius: 4px;
+    padding: 30px;
+    backdrop-filter: blur(10px);
+}
+
+/* Titles */
+h1 {
+    font-size: 28px;
+    text-align: center;
+    color: #c9a84c;
+    margin-bottom: 5px;
+    letter-spacing: 3px;
+    text-transform: uppercase;
+}
+
+h2 {
+    font-size: 16px;
+    text-align: center;
+    color: #a09080;
+    margin-bottom: 25px;
+    font-weight: normal;
+    letter-spacing: 1px;
+}
+
+/* Character card in the list */
+.char-card {
+    background: rgba(40, 32, 20, 0.8);
+    border: 1px solid rgba(139, 109, 56, 0.2);
+    border-radius: 3px;
+    padding: 15px;
+    margin-bottom: 10px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    transition: border-color 0.2s;
+    cursor: pointer;
+}
+
+.char-card:hover {
+    border-color: rgba(139, 109, 56, 0.6);
+}
+
+.char-info {
+    flex: 1;
+}
+
+.char-name {
+    font-size: 18px;
+    color: #e8dcc8;
+    margin-bottom: 4px;
+}
+
+.char-details {
+    font-size: 12px;
+    color: #8a7a66;
+}
+
+.char-actions {
+    display: flex;
+    gap: 8px;
+}
+
+/* Buttons */
+.btn {
+    padding: 8px 16px;
+    border: 1px solid rgba(139, 109, 56, 0.4);
+    border-radius: 3px;
+    cursor: pointer;
+    font-family: 'Georgia', serif;
+    font-size: 13px;
+    transition: all 0.2s;
+    letter-spacing: 0.5px;
+}
+
+.btn-play {
+    background: rgba(139, 109, 56, 0.3);
+    color: #c9a84c;
+}
+
+.btn-play:hover {
+    background: rgba(139, 109, 56, 0.5);
+}
+
+.btn-delete {
+    background: rgba(120, 30, 30, 0.3);
+    color: #c86a6a;
+    border-color: rgba(120, 30, 30, 0.4);
+}
+
+.btn-delete:hover {
+    background: rgba(120, 30, 30, 0.5);
+}
+
+.btn-create {
+    background: rgba(139, 109, 56, 0.2);
+    color: #c9a84c;
+    width: 100%;
+    padding: 12px;
+    margin-top: 15px;
+    font-size: 14px;
+}
+
+.btn-create:hover {
+    background: rgba(139, 109, 56, 0.4);
+}
+
+.btn-cancel {
+    background: rgba(60, 50, 40, 0.5);
+    color: #a09080;
+}
+
+.btn-cancel:hover {
+    background: rgba(60, 50, 40, 0.8);
+}
+
+/* Form elements */
+.form-group {
+    margin-bottom: 15px;
+}
+
+.form-group label {
+    display: block;
+    font-size: 13px;
+    color: #a09080;
+    margin-bottom: 5px;
+}
+
+.form-group input {
+    width: 100%;
+    padding: 10px;
+    background: rgba(30, 25, 18, 0.8);
+    border: 1px solid rgba(139, 109, 56, 0.3);
+    border-radius: 3px;
+    color: #e8dcc8;
+    font-family: 'Georgia', serif;
+    font-size: 14px;
+}
+
+.form-group input:focus {
+    outline: none;
+    border-color: rgba(139, 109, 56, 0.6);
+}
+
+.form-buttons {
+    display: flex;
+    gap: 10px;
+}
+
+.form-buttons .btn {
+    flex: 1;
+}
+
+/* Utility classes */
+.hidden {
+    display: none !important;
+}
+
+.error {
+    color: #c86a6a;
+    text-align: center;
+    margin-top: 10px;
+    font-size: 13px;
+}
+
+.warning {
+    color: #c86a6a;
+    text-align: center;
+    font-size: 13px;
+    margin-bottom: 15px;
+}
+
+.status {
+    text-align: center;
+    color: #a09080;
+    font-size: 13px;
+    margin-top: 10px;
+}
+
+/* Scrollbar styling */
+::-webkit-scrollbar {
+    width: 6px;
+}
+
+::-webkit-scrollbar-track {
+    background: rgba(15, 12, 8, 0.5);
+}
+
+::-webkit-scrollbar-thumb {
+    background: rgba(139, 109, 56, 0.4);
+    border-radius: 3px;
+}

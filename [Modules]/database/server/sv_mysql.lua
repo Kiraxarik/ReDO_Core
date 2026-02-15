@@ -5,6 +5,14 @@
     NO MANUAL CONFIGURATION NEEDED!
 ]]
 
+-- Get the framework object from Core via export.
+-- This is how modules access ReDOCore when they're separate resources.
+ReDOCore = exports['Core']:GetCoreObject()
+
+-- Make Config available as a global for other files in this resource.
+-- Config is defined inside Core, but attached to ReDOCore.Config.
+Config = ReDOCore.Config
+
 ReDOCore.MySQL = {}
 
 -- Connection configuration

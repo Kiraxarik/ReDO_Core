@@ -44,13 +44,18 @@ CreateThread(function()
     ReDOCore.Init()
 end)
 
--- Export functions for other resources
-function getSharedObject()
+-- Export the core object for other resources.
+-- Two methods so older and newer code both work.
+--
+-- Other resources use:  local ReDOCore = exports['Core']:GetCoreObject()
+-- The exports() function is the RELIABLE way to register exports in lua54 mode.
+-- Just defining a global function with the right name can fail silently.
+exports('getSharedObject', function()
     return ReDOCore
-end
+end)
 
-function GetCoreObject()
+exports('GetCoreObject', function()
     return ReDOCore
-end
+end)
 
 ReDOCore.Info("Server main loaded")

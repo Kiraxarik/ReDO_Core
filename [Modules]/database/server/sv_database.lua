@@ -1,6 +1,6 @@
 --[[
     Framework Database Functions
-    
+
     Simple wrapper around the query builder for common operations.
     Uses the auto-table creation system.
 ]]
@@ -12,11 +12,11 @@ local pendingSchemas = {}
 -- Initialize database and create tables on server start
 CreateThread(function()
     Wait(1000) -- Wait for MySQL to be ready
-    
+
     ReDOCore.Info("Initializing database system...")
     ReDOCore.MySQL.Initialize()
     Wait(500)
-    
+
     -- Create core tables only
     local coreTablesReady = false
     ReDOCore.DB.CreateAllTables(function(success)
@@ -27,7 +27,7 @@ CreateThread(function()
         ReDOCore.Info("Core tables ready!")
         coreTablesReady = true
     end)
-    
+
     -- Wait for core tables to finish
     local timeout = 0
     while not coreTablesReady do
@@ -38,12 +38,12 @@ CreateThread(function()
             return
         end
     end
-    
+
     -- Mark database as ready immediately
     dbReady = true
     ReDOCore.Info("Database ready! Accepting schema registrations.")
     TriggerEvent('framework:database:ready')
-    
+
     -- Process anything already queued
     if #pendingSchemas > 0 then
         ReDOCore.Info("Creating %d queued table(s)...", #pendingSchemas)
@@ -61,15 +61,15 @@ function ReDOCore.DB.RegisterSchema(tableName, schema)
         ReDOCore.Error("RegisterSchema: tableName and schema required")
         return
     end
-    
+
     ReDOCore.DB.Schema[tableName] = schema
     ReDOCore.DebugFlag('SQL_SchemaRegister', "Schema registered: %s | dbReady: %s", tableName, tostring(dbReady))
-    
+
     -- Skip if this is a core schema (already handled by CreateAllTables)
     if ReDOCore.DB.CoreSchemas[tableName] then
         return
     end
-    
+
     if dbReady then
         ReDOCore.Info("Creating table from schema: %s", tableName)
         ReDOCore.DB.CreateTable(tableName)
@@ -100,7 +100,7 @@ function ReDOCore.LoadPlayerData(identifier, callback)
         :First(function(player)
             if player then
                 ReDOCore.Debug("Player found: %s (ID: %d)", player.name, player.id)
-                
+
                 -- Parse position from JSON
                 local position = Config.Authorization.DefaultSpawn
                 if player.position then
@@ -109,7 +109,7 @@ function ReDOCore.LoadPlayerData(identifier, callback)
                         position = vector4(pos.x, pos.y, pos.z, pos.w or 0.0)
                     end
                 end
-                
+
                 -- Parse metadata from JSON
                 local metadata = {}
                 if player.metadata then
@@ -118,7 +118,7 @@ function ReDOCore.LoadPlayerData(identifier, callback)
                         metadata = meta
                     end
                 end
-                
+
                 -- Format data
                 local data = {
                     dbId = player.id,
@@ -139,7 +139,7 @@ function ReDOCore.LoadPlayerData(identifier, callback)
                         grade = 0
                     }
                 }
-                
+
                 callback(data)
             else
                 ReDOCore.Debug("Player not found: %s", identifier)
@@ -167,7 +167,7 @@ function ReDOCore.SavePlayerData(identifier, data)
             w = data.position.w or 0.0
         })
     end
-    
+
     -- Convert metadata to JSON
     local metadataJson = nil
     if data.metadata then
