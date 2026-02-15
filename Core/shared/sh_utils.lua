@@ -12,6 +12,11 @@ ReDOCore.String = ReDOCore.String or {}
 ReDOCore.Table = ReDOCore.Table or {}
 
 local function getLogLevel()
+    -- Safety check - if Config doesn't exist yet, default to INFO
+    if not Config or not Config.Logging or not Config.Logging.Level then
+        return ReDOCore.LogLevels.INFO
+    end
+    
     local configLevel = Config.Logging.Level or "INFO"
     return ReDOCore.LogLevels[configLevel] or ReDOCore.LogLevels.INFO
 end
