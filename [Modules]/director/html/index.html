@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Director — Scene Editor</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div id="editor" class="hidden">
+
+        <!-- TOP BAR: Scene name, duration, file operations -->
+        <header id="top-bar">
+            <div class="bar-left">
+                <span class="brand">DIRECTOR</span>
+                <input type="text" id="scene-name" placeholder="scene_name" spellcheck="false">
+                <label class="dur-label">
+                    <span>Duration</span>
+                    <input type="number" id="scene-duration" value="30" min="1" max="600" step="1">
+                    <span class="unit">s</span>
+                </label>
+            </div>
+            <div class="bar-center">
+                <button id="btn-preview" class="bar-btn" title="Preview scene">&#9654; Preview</button>
+                <button id="btn-stop" class="bar-btn hidden" title="Stop preview">&#9632; Stop</button>
+            </div>
+            <div class="bar-right">
+                <button id="btn-save" class="bar-btn" title="Save scene">Save</button>
+                <button id="btn-load" class="bar-btn" title="Load scene">Load</button>
+                <button id="btn-close" class="bar-btn btn-close" title="Close editor">&times;</button>
+            </div>
+        </header>
+
+        <!-- LEFT PANEL: Entity list & properties -->
+        <aside id="left-panel">
+            <div class="panel-section">
+                <div class="section-header">
+                    <h3>Entities</h3>
+                    <button id="btn-add-entity" class="icon-btn" title="Add entity">+</button>
+                </div>
+                <div id="entity-list" class="item-list"></div>
+            </div>
+
+            <!-- Add Entity Form (hidden by default) -->
+            <div id="add-entity-form" class="panel-section hidden">
+                <h3>Add Entity</h3>
+                <label>ID <input type="text" id="new-entity-id" placeholder="bartender" spellcheck="false"></label>
+                <label>Type
+                    <select id="new-entity-type">
+                        <option value="ped">Ped</option>
+                        <option value="object">Object</option>
+                    </select>
+                </label>
+                <label>Model <input type="text" id="new-entity-model" placeholder="a_m_m_saloonpatrons_01" spellcheck="false"></label>
+                <div class="form-actions">
+                    <button id="btn-confirm-entity" class="small-btn">Add</button>
+                    <button id="btn-cancel-entity" class="small-btn muted">Cancel</button>
+                </div>
+            </div>
+        </aside>
+
+        <!-- RIGHT PANEL: Camera keyframes & properties -->
+        <aside id="right-panel">
+            <div class="panel-section">
+                <div class="section-header">
+                    <h3>Camera</h3>
+                    <button id="btn-add-cam-kf" class="icon-btn" title="Add keyframe at current position">+ KF</button>
+                </div>
+                <div id="cam-kf-list" class="item-list"></div>
+            </div>
+
+            <div class="panel-section">
+                <h3>Camera Info</h3>
+                <div id="cam-info" class="info-grid">
+                    <span>X</span><span id="cam-x">0.0</span>
+                    <span>Y</span><span id="cam-y">0.0</span>
+                    <span>Z</span><span id="cam-z">0.0</span>
+                    <span>FOV</span><span id="cam-fov">50.0</span>
+                </div>
+            </div>
+
+            <div class="panel-section">
+                <label class="speed-control">
+                    <span>Cam Speed</span>
+                    <input type="range" id="cam-speed" min="0.1" max="5" step="0.1" value="1">
+                    <span id="cam-speed-val">1.0</span>
+                </label>
+            </div>
+        </aside>
+
+        <!-- BOTTOM: Timeline -->
+        <footer id="timeline-bar">
+            <div id="timeline-controls">
+                <button id="tl-cam-toggle" class="tl-btn active" title="Toggle camera control">&#127909; Cam</button>
+                <span id="tl-time">0.0s</span>
+                <span class="tl-sep">/</span>
+                <span id="tl-duration">30.0s</span>
+            </div>
+            <div id="timeline-ruler"></div>
+            <div id="timeline-track">
+                <div id="timeline-bg"></div>
+                <div id="timeline-playhead" style="left:0%"></div>
+                <div id="timeline-markers"></div>
+            </div>
+        </footer>
+
+        <!-- LOAD DIALOG (hidden by default) -->
+        <div id="load-dialog" class="dialog hidden">
+            <div class="dialog-content">
+                <h3>Load Scene</h3>
+                <div id="scene-file-list" class="item-list"></div>
+                <div class="form-actions">
+                    <button id="btn-cancel-load" class="small-btn muted">Cancel</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- STATUS TOAST -->
+        <div id="toast" class="toast hidden"></div>
+    </div>
+
+    <script src="editor.js"></script>
+</body>
+</html>

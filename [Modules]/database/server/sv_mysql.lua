@@ -94,6 +94,10 @@ end
 -- IMPORTANT: oxmysql does NOT call the callback when a query errors.
 -- We use a timeout to detect this and invoke the callback with nil,
 -- so the rest of the system doesn't hang waiting forever.
+--
+-- NOTE: oxmysql may return the affected count as either a plain number
+-- or a table like { affectedRows = N }. We normalize to always pass
+-- a plain number to the callback.
 function MySQL.Execute(query, parameters, callback)
     if not query then
         ReDOCore.Error("MySQL.Execute: query is required")
@@ -103,13 +107,27 @@ function MySQL.Execute(query, parameters, callback)
     
     parameters = parameters or {}
     
+    -- Normalize result: oxmysql returns either a number or { affectedRows = N }
+    local function normalizeResult(result)
+        if result == nil then return nil end
+        if type(result) == "number" then return result end
+        if type(result) == "table" then
+            if result.affectedRows then return result.affectedRows end
+            -- Some drivers return { [1] = { affectedRows = N } }
+            if result[1] and result[1].affectedRows then return result[1].affectedRows end
+            -- If it's a table but we can't extract a number, return 0
+            return 0
+        end
+        return 0
+    end
+    
     -- Wrap callback with a timeout safety net.
     -- If oxmysql doesn't call back within 5 seconds, we assume it failed.
     local cbFired = false
     local safeCallback = function(result)
         if cbFired then return end
         cbFired = true
-        if callback then callback(result) end
+        if callback then callback(normalizeResult(result)) end
     end
     
     -- Start timeout watcher
