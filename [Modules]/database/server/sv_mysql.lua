@@ -3,17 +3,29 @@
     
     Auto-detects and uses any MySQL resource (oxmysql, mysql-async, or ghmattimysql)
     NO MANUAL CONFIGURATION NEEDED!
+    
+    CROSS-RESOURCE SHARING:
+    With lua54, each resource has its own Lua state. Tables passed via
+    exports are proxied — mutations in one resource don't always show
+    in another. So instead of trying to attach MySQL/DB to Core's table,
+    we export them directly from THIS resource.
+    
+    Other resources access MySQL via:
+        exports['database']:GetMySQL()
+    And the query builder via:
+        exports['database']:GetDB()
 ]]
 
--- Get the framework object from Core via export.
--- This is how modules access ReDOCore when they're separate resources.
+-- Get the framework object from Core (for logging functions and Config).
 ReDOCore = exports['Core']:GetCoreObject()
 
 -- Make Config available as a global for other files in this resource.
--- Config is defined inside Core, but attached to ReDOCore.Config.
 Config = ReDOCore.Config
 
-ReDOCore.MySQL = {}
+-- Build the MySQL object. This stays in THIS resource's Lua state.
+-- Other files in this resource access it as the global ReDOCore.MySQL
+-- (we set that at the bottom). Other RESOURCES access it via export.
+local MySQL = {}
 
 -- Connection configuration
 local connectionString = GetConvar('mysql_connection_string', '')
@@ -38,7 +50,7 @@ local function ParseConnectionString(connStr)
 end
 
 -- Initialize connection
-function ReDOCore.MySQL.Initialize()
+function MySQL.Initialize()
     if connectionString == "" then
         ReDOCore.Error("MySQL connection string not set! Add this to server.cfg:")
         ReDOCore.Error("  set mysql_connection_string \"mysql://root@localhost/redm_framework\"")
@@ -74,12 +86,15 @@ function ReDOCore.MySQL.Initialize()
 end
 
 -- Check if connected
-function ReDOCore.MySQL.IsConnected()
+function MySQL.IsConnected()
     return isConnected
 end
 
 -- Execute a query (INSERT, UPDATE, DELETE) using built-in natives
-function ReDOCore.MySQL.Execute(query, parameters, callback)
+-- IMPORTANT: oxmysql does NOT call the callback when a query errors.
+-- We use a timeout to detect this and invoke the callback with nil,
+-- so the rest of the system doesn't hang waiting forever.
+function MySQL.Execute(query, parameters, callback)
     if not query then
         ReDOCore.Error("MySQL.Execute: query is required")
         if callback then callback(nil) end
@@ -88,10 +103,30 @@ function ReDOCore.MySQL.Execute(query, parameters, callback)
     
     parameters = parameters or {}
     
+    -- Wrap callback with a timeout safety net.
+    -- If oxmysql doesn't call back within 5 seconds, we assume it failed.
+    local cbFired = false
+    local safeCallback = function(result)
+        if cbFired then return end
+        cbFired = true
+        if callback then callback(result) end
+    end
+    
+    -- Start timeout watcher
+    if callback then
+        SetTimeout(5000, function()
+            if not cbFired then
+                ReDOCore.Warn("MySQL.Execute: Query callback timed out (oxmysql may have errored)")
+                ReDOCore.DebugFlag('SQL_Queries', "Timed out query: %s", query)
+                safeCallback(nil)
+            end
+        end)
+    end
+    
     -- Try oxmysql first (most common)
     if GetResourceState('oxmysql') == 'started' then
         exports.oxmysql:execute(query, parameters, function(result)
-            if callback then callback(result) end
+            safeCallback(result)
         end)
         return
     end
@@ -99,7 +134,7 @@ function ReDOCore.MySQL.Execute(query, parameters, callback)
     -- Try ghmattimysql
     if GetResourceState('ghmattimysql') == 'started' then
         exports.ghmattimysql:execute(query, parameters, function(result)
-            if callback then callback(result) end
+            safeCallback(result)
         end)
         return
     end
@@ -107,17 +142,17 @@ function ReDOCore.MySQL.Execute(query, parameters, callback)
     -- Try mysql-async
     if GetResourceState('mysql-async') == 'started' then
         exports['mysql-async']:mysql_execute(query, parameters, function(result)
-            if callback then callback(result) end
+            safeCallback(result)
         end)
         return
     end
     
     ReDOCore.Error("No MySQL resource available!")
-    if callback then callback(nil) end
+    safeCallback(nil)
 end
 
 -- Fetch multiple rows (SELECT)
-function ReDOCore.MySQL.Fetch(query, parameters, callback)
+function MySQL.Fetch(query, parameters, callback)
     if not query then
         ReDOCore.Error("MySQL.Fetch: query is required")
         if callback then callback(nil) end
@@ -126,10 +161,26 @@ function ReDOCore.MySQL.Fetch(query, parameters, callback)
     
     parameters = parameters or {}
     
+    local cbFired = false
+    local safeCallback = function(result)
+        if cbFired then return end
+        cbFired = true
+        if callback then callback(result) end
+    end
+    
+    if callback then
+        SetTimeout(5000, function()
+            if not cbFired then
+                ReDOCore.Warn("MySQL.Fetch: Query callback timed out")
+                safeCallback({})
+            end
+        end)
+    end
+    
     -- Try oxmysql
     if GetResourceState('oxmysql') == 'started' then
         exports.oxmysql:execute(query, parameters, function(result)
-            if callback then callback(result or {}) end
+            safeCallback(result or {})
         end)
         return
     end
@@ -137,7 +188,7 @@ function ReDOCore.MySQL.Fetch(query, parameters, callback)
     -- Try ghmattimysql
     if GetResourceState('ghmattimysql') == 'started' then
         exports.ghmattimysql:execute(query, parameters, function(result)
-            if callback then callback(result or {}) end
+            safeCallback(result or {})
         end)
         return
     end
@@ -145,18 +196,18 @@ function ReDOCore.MySQL.Fetch(query, parameters, callback)
     -- Try mysql-async
     if GetResourceState('mysql-async') == 'started' then
         exports['mysql-async']:mysql_fetch_all(query, parameters, function(result)
-            if callback then callback(result or {}) end
+            safeCallback(result or {})
         end)
         return
     end
     
     ReDOCore.Error("No MySQL resource available!")
-    if callback then callback({}) end
+    safeCallback({})
 end
 
 -- Fetch single row
-function ReDOCore.MySQL.FetchOne(query, parameters, callback)
-    ReDOCore.MySQL.Fetch(query, parameters, function(results)
+function MySQL.FetchOne(query, parameters, callback)
+    MySQL.Fetch(query, parameters, function(results)
         if callback then
             callback(results and results[1] or nil)
         end
@@ -164,7 +215,7 @@ function ReDOCore.MySQL.FetchOne(query, parameters, callback)
 end
 
 -- Fetch a single value
-function ReDOCore.MySQL.FetchScalar(query, parameters, callback)
+function MySQL.FetchScalar(query, parameters, callback)
     if not query then
         ReDOCore.Error("MySQL.FetchScalar: query is required")
         if callback then callback(nil) end
@@ -202,7 +253,7 @@ function ReDOCore.MySQL.FetchScalar(query, parameters, callback)
 end
 
 -- Insert and return the inserted ID
-function ReDOCore.MySQL.Insert(query, parameters, callback)
+function MySQL.Insert(query, parameters, callback)
     if not query then
         ReDOCore.Error("MySQL.Insert: query is required")
         if callback then callback(nil) end
@@ -242,7 +293,7 @@ function ReDOCore.MySQL.Insert(query, parameters, callback)
 end
 
 -- Transaction support
-function ReDOCore.MySQL.Transaction(queries, callback)
+function MySQL.Transaction(queries, callback)
     if not queries or #queries == 0 then
         ReDOCore.Error("MySQL.Transaction: queries array is required")
         if callback then callback(false) end
@@ -278,7 +329,7 @@ function ReDOCore.MySQL.Transaction(queries, callback)
 end
 
 -- Prepare a value for SQL (escape and quote)
-function ReDOCore.MySQL.Escape(value)
+function MySQL.Escape(value)
     if value == nil then
         return "NULL"
     elseif type(value) == "string" then
@@ -291,3 +342,13 @@ function ReDOCore.MySQL.Escape(value)
 end
 
 ReDOCore.Info("MySQL handler loaded (multi-compatible)")
+
+-- Make MySQL available within this resource.
+-- Other files (sv_querybuilder, sv_database) run in the SAME Lua state,
+-- so they can see this global.
+ReDOCore.MySQL = MySQL
+
+-- Export so OTHER resources can access MySQL directly.
+exports('GetMySQL', function()
+    return MySQL
+end)

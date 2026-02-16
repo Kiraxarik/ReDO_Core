@@ -10,14 +10,18 @@ local currentRequestId = 0
 
 -- Trigger a callback on the server and wait for response
 function ReDOCore.TriggerServerCallback(name, cb, ...)
+    -- Debug: what are we actually receiving?
+    print(string.format("^3[CB DEBUG] TriggerServerCallback called | name=%s | cb type=%s | cb value=%s | args=%d^7",
+        tostring(name), type(cb), tostring(cb), select('#', ...)))
+    
     -- Validate inputs
     if not name then
         ReDOCore.Error("TriggerServerCallback: name parameter is required")
         return
     end
 
-    if not cb or type(cb) ~= 'function' then
-        ReDOCore.Error("TriggerServerCallback: callback must be a function")
+    if not cb then
+        ReDOCore.Error("TriggerServerCallback: callback must be a function (got nil)")
         return
     end
 

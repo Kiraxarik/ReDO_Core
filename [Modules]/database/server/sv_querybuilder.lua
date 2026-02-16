@@ -28,7 +28,8 @@ ReDOCore.DB.CoreSchemas = {} -- Tracks which schemas belong to the core
 ]]
 
 -- Generate CREATE TABLE SQL from schema
-local function GenerateCreateTableSQL(tableName, schema)
+-- Exposed on ReDOCore.DB so other files (sv_database.lua) can use it
+function ReDOCore.DB.GenerateCreateTableSQL(tableName, schema)
     local columns = {}
     local primaryKeys = {}
     local uniqueKeys = {}
@@ -58,6 +59,8 @@ local function GenerateCreateTableSQL(tableName, schema)
         if def.default then
             if def.default == "CURRENT_TIMESTAMP" then
                 col = col .. " DEFAULT CURRENT_TIMESTAMP"
+            elseif def.default == "NULL" then
+                col = col .. " DEFAULT NULL"
             else
                 col = col .. " DEFAULT '" .. def.default .. "'"
             end
@@ -127,7 +130,7 @@ function ReDOCore.DB.CreateTable(tableName, callback)
         end
         
         -- Generate and execute CREATE TABLE
-        local sql = GenerateCreateTableSQL(tableName, schema)
+        local sql = ReDOCore.DB.GenerateCreateTableSQL(tableName, schema)
         
         ReDOCore.Info("Creating table: %s", tableName)
         ReDOCore.DebugFlag('SQL_Queries', "SQL: %s", sql)
@@ -388,3 +391,9 @@ function ReDOCore.DB.Find(tableName, id, callback)
 end
 
 ReDOCore.Info("Query Builder & ORM loaded")
+
+-- Export the DB subsystem so OTHER resources can access it.
+-- Other resources call: local DB = exports['database']:GetDB()
+exports('GetDB', function()
+    return ReDOCore.DB
+end)

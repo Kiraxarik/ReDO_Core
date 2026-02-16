@@ -22,4 +22,15 @@ exports('GetCoreObject', function()
     return ReDOCore
 end)
 
+-- Export TriggerServerCallback directly.
+-- With lua54, function arguments from other resources arrive as proxy tables,
+-- not real functions. We wrap cb in a local function so it's a real function
+-- when it reaches the callback storage.
+exports('TriggerServerCallback', function(name, cb, ...)
+    local wrappedCb = function(...)
+        if cb then cb(...) end
+    end
+    ReDOCore.TriggerServerCallback(name, wrappedCb, ...)
+end)
+
 ReDOCore.Info("Client initialized")

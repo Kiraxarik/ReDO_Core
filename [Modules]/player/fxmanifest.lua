@@ -26,6 +26,7 @@ shared_scripts {
 -- 3. sv_characters.lua - character CRUD
 -- 4. sv_callbacks.lua - registers server callbacks the client can trigger
 server_scripts {
+    'server/sv_shared.lua',
     'server/sv_auth.lua',
     'server/sv_accounts.lua',
     'server/sv_characters.lua',

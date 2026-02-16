@@ -1,23 +1,349 @@
 --[[
     Framework Database Functions
-
-    Simple wrapper around the query builder for common operations.
-    Uses the auto-table creation system.
+    
+    Handles database initialization, schema registration, and 
+    AUTOMATIC MIGRATION DETECTION.
+    
+    When a table already exists but the schema has changed, the system:
+    1. Detects which columns were added, removed, or modified
+    2. Logs the differences to the console
+    3. Prompts the admin to accept or reject the changes
+    4. Applies ALTER TABLE statements if accepted
+    
+    Commands:
+    - db:yes  - Accept pending migrations
+    - db:no   - Reject pending migrations (skip changes)
+    - db:diff - Show pending migrations again
 ]]
 
 -- Track whether database is ready
 local dbReady = false
 local pendingSchemas = {}
 
--- Initialize database and create tables on server start
-CreateThread(function()
-    Wait(1000) -- Wait for MySQL to be ready
+-- Migration system
+local pendingMigrations = {}   -- { tableName = { diff = {}, statements = {} } }
+local migrationWaiting = false -- Are we waiting for admin input?
+local migrationResolved = false
 
+--[[ =========================================================================
+    COLUMN COMPARISON
+    
+    Fetches the actual columns from MySQL and compares them to the schema.
+    Returns a diff describing what needs to change.
+========================================================================= ]]
+
+local function GetTableColumns(tableName, callback)
+    local query = "SELECT COLUMN_NAME, COLUMN_TYPE, IS_NULLABLE, COLUMN_DEFAULT, EXTRA FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ? ORDER BY ORDINAL_POSITION"
+    
+    ReDOCore.MySQL.Fetch(query, {tableName}, function(results)
+        local columns = {}
+        if results then
+            for _, row in ipairs(results) do
+                -- MySQL might return uppercase or lowercase field names
+                local name = row.COLUMN_NAME or row.column_name
+                columns[name] = {
+                    type = row.COLUMN_TYPE or row.column_type,
+                    nullable = (row.IS_NULLABLE or row.is_nullable) == "YES",
+                    default_val = row.COLUMN_DEFAULT or row.column_default,
+                    extra = row.EXTRA or row.extra or ""
+                }
+            end
+        end
+        callback(columns)
+    end)
+end
+
+local function CompareSchema(tableName, schema, actualColumns)
+    local diff = {
+        adds = {},      -- Columns in schema but not in database
+        drops = {},     -- Columns in database but not in schema
+        modifies = {},  -- Columns that exist but differ
+        hasChanges = false
+    }
+    
+    for colName, def in pairs(schema) do
+        if not actualColumns[colName] then
+            table.insert(diff.adds, colName)
+            diff.hasChanges = true
+        else
+            local actual = actualColumns[colName]
+            local expectedType = string.lower(def.type)
+            local actualType = string.lower(actual.type)
+            
+            local changed = false
+            
+            if def.length then
+                local expected = expectedType .. "(" .. tostring(def.length) .. ")"
+                if actualType ~= expected then
+                    changed = true
+                end
+            else
+                -- Check base type (e.g., "int" should match "int(11)")
+                if not string.find(actualType, expectedType, 1, true) then
+                    changed = true
+                end
+            end
+            
+            -- Check NOT NULL mismatch
+            if def.not_null and actual.nullable then
+                changed = true
+            end
+            
+            if changed then
+                table.insert(diff.modifies, colName)
+                diff.hasChanges = true
+            end
+        end
+    end
+    
+    -- Columns in database but NOT in schema
+    for colName, _ in pairs(actualColumns) do
+        if not schema[colName] then
+            table.insert(diff.drops, colName)
+            diff.hasChanges = true
+        end
+    end
+    
+    return diff
+end
+
+--[[ =========================================================================
+    GENERATE ALTER TABLE SQL
+========================================================================= ]]
+
+local function BuildColumnSQL(colName, def)
+    local col = "`" .. colName .. "` "
+    
+    if def.length then
+        col = col .. def.type .. "(" .. def.length .. ")"
+    else
+        col = col .. def.type
+    end
+    
+    if def.auto_increment then
+        col = col .. " AUTO_INCREMENT"
+    end
+    
+    if def.not_null then
+        col = col .. " NOT NULL"
+    end
+    
+    if def.default then
+        if def.default == "CURRENT_TIMESTAMP" then
+            col = col .. " DEFAULT CURRENT_TIMESTAMP"
+        elseif def.default == "NULL" then
+            col = col .. " DEFAULT NULL"
+        else
+            col = col .. " DEFAULT '" .. def.default .. "'"
+        end
+    end
+    
+    if def.on_update then
+        col = col .. " ON UPDATE " .. def.on_update
+    end
+    
+    return col
+end
+
+local function GenerateAlterSQL(tableName, schema, diff)
+    local statements = {}
+    
+    for _, colName in ipairs(diff.adds) do
+        local def = schema[colName]
+        local col = BuildColumnSQL(colName, def)
+        table.insert(statements, string.format("ALTER TABLE `%s` ADD COLUMN %s", tableName, col))
+        
+        if def.unique and not def.primary then
+            table.insert(statements, string.format("ALTER TABLE `%s` ADD UNIQUE KEY (`%s`)", tableName, colName))
+        end
+    end
+    
+    for _, colName in ipairs(diff.modifies) do
+        local def = schema[colName]
+        local col = BuildColumnSQL(colName, def)
+        table.insert(statements, string.format("ALTER TABLE `%s` MODIFY COLUMN %s", tableName, col))
+    end
+    
+    -- We do NOT auto-drop columns. That's destructive.
+    -- We only warn about them.
+    
+    return statements
+end
+
+--[[ =========================================================================
+    MIGRATION PROMPT
+========================================================================= ]]
+
+local function PrintMigrationSummary()
+    print("")
+    print("^3========================================^7")
+    print("^3  DATABASE MIGRATIONS PENDING^7")
+    print("^3========================================^7")
+    
+    for tableName, migration in pairs(pendingMigrations) do
+        print(string.format("^3  Table: ^7%s", tableName))
+        
+        if #migration.diff.adds > 0 then
+            print(string.format("^2    + Add columns:^7 %s", table.concat(migration.diff.adds, ", ")))
+        end
+        
+        if #migration.diff.modifies > 0 then
+            print(string.format("^3    ~ Modify columns:^7 %s", table.concat(migration.diff.modifies, ", ")))
+        end
+        
+        if #migration.diff.drops > 0 then
+            print(string.format("^1    - Extra columns (not in schema):^7 %s", table.concat(migration.diff.drops, ", ")))
+            print("^8      (Will NOT be dropped. Remove manually if intended.)^7")
+        end
+        
+        if migration.statements and #migration.statements > 0 then
+            print("^5    SQL:^7")
+            for _, sql in ipairs(migration.statements) do
+                print(string.format("^5      %s^7", sql))
+            end
+        end
+        
+        print("")
+    end
+    
+    print("^3========================================^7")
+    print("^3  Type ^2db:yes^3 to apply changes^7")
+    print("^3  Type ^1db:no^3  to skip^7")
+    print("^3========================================^7")
+    print("")
+end
+
+local function ApplyMigrations(callback)
+    local allStatements = {}
+    
+    for tableName, migration in pairs(pendingMigrations) do
+        for _, sql in ipairs(migration.statements) do
+            table.insert(allStatements, sql)
+        end
+    end
+    
+    if #allStatements == 0 then
+        ReDOCore.Info("No SQL statements to execute")
+        pendingMigrations = {}
+        if callback then callback() end
+        return
+    end
+    
+    local completed = 0
+    local successCount = 0
+    
+    for _, sql in ipairs(allStatements) do
+        ReDOCore.Info("Executing: %s", sql)
+        ReDOCore.MySQL.Execute(sql, {}, function(result)
+            completed = completed + 1
+            if result ~= nil then
+                successCount = successCount + 1
+            else
+                ReDOCore.Error("Migration failed: %s", sql)
+            end
+            
+            if completed == #allStatements then
+                ReDOCore.Info("Migrations complete: %d/%d succeeded", successCount, #allStatements)
+                pendingMigrations = {}
+                if callback then callback() end
+            end
+        end)
+    end
+end
+
+-- Console commands
+RegisterCommand('db:yes', function(source)
+    if source ~= 0 then return end
+    if not migrationWaiting then
+        print("^3No pending migrations.^7")
+        return
+    end
+    print("^2Applying migrations...^7")
+    ApplyMigrations(function()
+        print("^2Migrations applied!^7")
+        migrationWaiting = false
+        migrationResolved = true
+    end)
+end)
+
+RegisterCommand('db:no', function(source)
+    if source ~= 0 then return end
+    if not migrationWaiting then
+        print("^3No pending migrations.^7")
+        return
+    end
+    print("^3Migrations skipped. Tables left unchanged.^7")
+    pendingMigrations = {}
+    migrationWaiting = false
+    migrationResolved = true
+end)
+
+RegisterCommand('db:diff', function(source)
+    if source ~= 0 then return end
+    if not migrationWaiting or not next(pendingMigrations) then
+        print("^3No pending migrations.^7")
+        return
+    end
+    PrintMigrationSummary()
+end)
+
+--[[ =========================================================================
+    SYNC TABLE
+    
+    Smart table creation/update:
+    - If table doesn't exist → CREATE it
+    - If table exists → compare schema, queue migrations if different
+========================================================================= ]]
+
+function ReDOCore.DB.SyncTable(tableName, callback)
+    local schema = ReDOCore.DB.Schema[tableName]
+    
+    if not schema then
+        ReDOCore.Error("No schema defined for table: %s", tableName)
+        if callback then callback(false) end
+        return
+    end
+    
+    ReDOCore.DB.TableExists(tableName, function(exists)
+        if not exists then
+            -- Table doesn't exist — create it fresh
+            ReDOCore.DB.CreateTable(tableName, callback)
+        else
+            -- Table exists — compare and detect changes
+            GetTableColumns(tableName, function(actualColumns)
+                local diff = CompareSchema(tableName, schema, actualColumns)
+                
+                if diff.hasChanges then
+                    local statements = GenerateAlterSQL(tableName, schema, diff)
+                    
+                    pendingMigrations[tableName] = {
+                        diff = diff,
+                        statements = statements
+                    }
+                    
+                    ReDOCore.Warn("Table '%s' has schema changes", tableName)
+                else
+                    ReDOCore.DebugFlag('SQL_TableExists', "Table '%s' is up to date", tableName)
+                end
+                
+                if callback then callback(true) end
+            end)
+        end
+    end)
+end
+
+--[[ =========================================================================
+    INITIALIZATION
+========================================================================= ]]
+
+CreateThread(function()
+    Wait(1000)
+    
     ReDOCore.Info("Initializing database system...")
     ReDOCore.MySQL.Initialize()
     Wait(500)
-
-    -- Create core tables only
+    
+    -- Process core tables
     local coreTablesReady = false
     ReDOCore.DB.CreateAllTables(function(success)
         if not success then
@@ -27,8 +353,7 @@ CreateThread(function()
         ReDOCore.Info("Core tables ready!")
         coreTablesReady = true
     end)
-
-    -- Wait for core tables to finish
+    
     local timeout = 0
     while not coreTablesReady do
         Wait(100)
@@ -38,257 +363,76 @@ CreateThread(function()
             return
         end
     end
-
-    -- Mark database as ready immediately
+    
+    -- Mark database as ready so schemas can register
     dbReady = true
     ReDOCore.Info("Database ready! Accepting schema registrations.")
     TriggerEvent('framework:database:ready')
-
-    -- Process anything already queued
+    
+    -- Process queued schemas (from resources that loaded before DB was ready)
     if #pendingSchemas > 0 then
-        ReDOCore.Info("Creating %d queued table(s)...", #pendingSchemas)
+        ReDOCore.Info("Syncing %d queued table(s)...", #pendingSchemas)
+        
+        local syncCompleted = 0
+        local syncTotal = #pendingSchemas
+        
         for _, tableName in ipairs(pendingSchemas) do
-            ReDOCore.DB.CreateTable(tableName)
+            ReDOCore.DB.SyncTable(tableName, function()
+                syncCompleted = syncCompleted + 1
+            end)
         end
+        
+        -- Wait for all syncs to finish (30s allows for 5s MySQL timeouts)
+        local syncTimeout = 0
+        while syncCompleted < syncTotal do
+            Wait(100)
+            syncTimeout = syncTimeout + 100
+            if syncTimeout > 30000 then
+                ReDOCore.Error("Timed out syncing tables! (%d/%d completed)", syncCompleted, syncTotal)
+                break
+            end
+        end
+        
         pendingSchemas = {}
     end
+    
+    -- If migrations detected, prompt admin
+    if next(pendingMigrations) then
+        migrationWaiting = true
+        PrintMigrationSummary()
+        
+        -- Wait for admin response
+        while migrationWaiting do
+            Wait(500)
+        end
+    else
+        ReDOCore.Info("All tables up to date!")
+    end
+    
+    ReDOCore.Info("Database initialization complete!")
 end)
 
--- Register a schema and auto-create the table
--- Works at ANY time - before or after database is ready
+-- Register a schema and auto-sync the table
 function ReDOCore.DB.RegisterSchema(tableName, schema)
     if not tableName or not schema then
         ReDOCore.Error("RegisterSchema: tableName and schema required")
         return
     end
-
+    
     ReDOCore.DB.Schema[tableName] = schema
     ReDOCore.DebugFlag('SQL_SchemaRegister', "Schema registered: %s | dbReady: %s", tableName, tostring(dbReady))
-
-    -- Skip if this is a core schema (already handled by CreateAllTables)
+    
     if ReDOCore.DB.CoreSchemas[tableName] then
         return
     end
-
+    
     if dbReady then
-        ReDOCore.Info("Creating table from schema: %s", tableName)
-        ReDOCore.DB.CreateTable(tableName)
+        ReDOCore.Info("Syncing table from schema: %s", tableName)
+        ReDOCore.DB.SyncTable(tableName)
     else
         ReDOCore.DebugFlag('SQL_SchemaRegister', "Queuing table: %s", tableName)
         table.insert(pendingSchemas, tableName)
     end
 end
-
---[[
-    ============================================================================
-    PLAYER DATABASE FUNCTIONS (Using Query Builder)
-    ============================================================================
-]]
-
--- Load a player from database
-function ReDOCore.LoadPlayerData(identifier, callback)
-    if not identifier then
-        ReDOCore.Error("LoadPlayerData: identifier is required")
-        callback(nil)
-        return
-    end
-
-    ReDOCore.Debug("Loading player from database: %s", identifier)
-
-    ReDOCore.DB.Table('players')
-        :Where('identifier', identifier)
-        :First(function(player)
-            if player then
-                ReDOCore.Debug("Player found: %s (ID: %d)", player.name, player.id)
-
-                -- Parse position from JSON
-                local position = Config.Authorization.DefaultSpawn
-                if player.position then
-                    local success, pos = pcall(json.decode, player.position)
-                    if success and pos and pos.x then
-                        position = vector4(pos.x, pos.y, pos.z, pos.w or 0.0)
-                    end
-                end
-
-                -- Parse metadata from JSON
-                local metadata = {}
-                if player.metadata then
-                    local success, meta = pcall(json.decode, player.metadata)
-                    if success and meta then
-                        metadata = meta
-                    end
-                end
-
-                -- Format data
-                local data = {
-                    dbId = player.id,
-                    identifier = player.identifier,
-                    license = player.license,
-                    name = player.name,
-                    group = player['group'] or "user",
-                    money = {
-                        cash = player.cash or 0,
-                        bank = player.bank or 0,
-                        gold = player.gold or 0
-                    },
-                    position = position,
-                    metadata = metadata,
-                    job = {
-                        name = "unemployed",
-                        label = "Unemployed",
-                        grade = 0
-                    }
-                }
-
-                callback(data)
-            else
-                ReDOCore.Debug("Player not found: %s", identifier)
-                callback(nil)
-            end
-        end)
-end
-
--- Save player to database
-function ReDOCore.SavePlayerData(identifier, data)
-    if not identifier or not data then
-        ReDOCore.Error("SavePlayerData: identifier and data required")
-        return
-    end
-
-    ReDOCore.Debug("Saving player: %s", identifier)
-
-    -- Convert position to JSON
-    local positionJson = nil
-    if data.position then
-        positionJson = json.encode({
-            x = data.position.x,
-            y = data.position.y,
-            z = data.position.z,
-            w = data.position.w or 0.0
-        })
-    end
-
-    -- Convert metadata to JSON
-    local metadataJson = nil
-    if data.metadata then
-        metadataJson = json.encode(data.metadata)
-    end
-
-    -- Build update data
-    local updateData = {
-        name = data.name,
-        ['group'] = data.group,
-        cash = data.money.cash,
-        bank = data.money.bank,
-        gold = data.money.gold,
-        position = positionJson,
-        metadata = metadataJson
-    }
-
-    -- Update player
-    ReDOCore.DB.Table('players')
-        :Where('identifier', identifier)
-        :Update(updateData, function(affected)
-            if affected and affected > 0 then
-                ReDOCore.Debug("Player saved: %s", identifier)
-            else
-                ReDOCore.Warn("No rows updated for: %s", identifier)
-            end
-        end)
-end
-
--- Create new player
-function ReDOCore.CreatePlayerData(identifier, license, name, callback)
-    if not identifier or not license or not name then
-        ReDOCore.Error("CreatePlayerData: identifier, license, name required")
-        if callback then callback(false) end
-        return
-    end
-
-    ReDOCore.Info("Creating new player: %s (%s)", name, identifier)
-
-    -- Get defaults
-    local defaults = Config.Authorization.DefaultPlayerData
-    local spawn = Config.Authorization.DefaultSpawn
-
-    -- Convert position to JSON
-    local positionJson = json.encode({
-        x = spawn.x,
-        y = spawn.y,
-        z = spawn.z,
-        w = spawn.w or 0.0
-    })
-
-    -- Build insert data
-    local insertData = {
-        identifier = identifier,
-        license = license,
-        name = name,
-        ['group'] = defaults.group,
-        cash = defaults.money.cash,
-        bank = defaults.money.bank,
-        gold = defaults.money.gold,
-        position = positionJson,
-        metadata = json.encode({})
-    }
-
-    -- Insert player
-    ReDOCore.DB.Table('players')
-        :Insert(insertData, function(insertId)
-            if insertId then
-                ReDOCore.Info("Player created with ID: %d", insertId)
-                if callback then callback(true, insertId) end
-            else
-                ReDOCore.Error("Failed to create player!")
-                if callback then callback(false) end
-            end
-        end)
-end
-
---[[
-    ============================================================================
-    EXAMPLE USAGE (for other resources)
-    ============================================================================
-]]
-
---[[
-
--- Get all players with more than $1000 cash
-ReDOCore.DB.Table('players')
-    :Where('cash', '>', 1000)
-    :OrderBy('cash', 'DESC')
-    :Get(function(players)
-        for _, player in ipairs(players) do
-            print(player.name .. " has $" .. player.cash)
-        end
-    end)
-
--- Find player by ID
-ReDOCore.DB.Find('players', 5, function(player)
-    if player then
-        print("Found: " .. player.name)
-    end
-end)
-
--- Update player money
-ReDOCore.DB.Table('players')
-    :Where('identifier', 'license:abc123')
-    :Update({ cash = 5000 }, function(affected)
-        print("Updated " .. affected .. " rows")
-    end)
-
--- Delete inactive players
-ReDOCore.DB.Table('players')
-    :Where('last_seen', '<', '2024-01-01')
-    :Delete(function(affected)
-        print("Deleted " .. affected .. " inactive players")
-    end)
-
--- Count total players
-ReDOCore.DB.Table('players'):Count(function(count)
-    print("Total players: " .. count)
-end)
-
-]]
 
 ReDOCore.Info("Database wrapper functions loaded")

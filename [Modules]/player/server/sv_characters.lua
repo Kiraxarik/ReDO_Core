@@ -24,10 +24,19 @@
 local ReDOCore = exports['Core']:GetCoreObject()
 local Config = ReDOCore.Config
 
+-- Local utility to avoid cross-resource proxy issues with ReDOCore.String.Trim
+local function Trim(str)
+    if not str then return nil end
+    return str:match("^%s*(.-)%s*$")
+end
+local DB = exports['database']:GetDB()
+local MySQL = exports['database']:GetMySQL()
+
 -- This holds the loaded character data for every connected player.
 -- Key = player's server source ID (temporary, changes every reconnect)
 -- Value = character data table (id, name, money, position, etc.)
-ReDOCore.ActiveCharacters = {}
+-- Stored on PlayerModule (resource-local global) instead of ReDOCore (cross-resource proxy)
+-- because lua54 proxy mutations don't propagate between files.
 
 --[[ =========================================================================
     GET CHARACTERS FOR ACCOUNT
@@ -40,14 +49,14 @@ ReDOCore.ActiveCharacters = {}
     - callback: function(characters) — array of character rows
 ========================================================================= ]]
 
-function ReDOCore.GetCharacters(accountId, callback)
+function PlayerModule.GetCharacters(accountId, callback)
     if not accountId then
         ReDOCore.Error("GetCharacters: accountId required")
         callback({})
         return
     end
 
-    ReDOCore.DB.Table('characters')
+    DB.Table('characters')
         :Where('account_id', accountId)
         :OrderBy('last_played', 'DESC')  -- Most recently played first
         :Get(function(characters)
@@ -96,7 +105,7 @@ end
     - callback: function(character) — returns the new character data or nil
 ========================================================================= ]]
 
-function ReDOCore.CreateCharacter(accountId, firstName, lastName, callback)
+function PlayerModule.CreateCharacter(accountId, firstName, lastName, callback)
     if not accountId or not firstName or not lastName then
         ReDOCore.Error("CreateCharacter: accountId, firstName, lastName required")
         if callback then callback(nil) end
@@ -104,8 +113,8 @@ function ReDOCore.CreateCharacter(accountId, firstName, lastName, callback)
     end
 
     -- Sanitize names — trim whitespace, basic length check.
-    firstName = ReDOCore.String.Trim(firstName)
-    lastName = ReDOCore.String.Trim(lastName)
+    firstName = Trim(firstName)
+    lastName = Trim(lastName)
 
     if not firstName or #firstName < 2 then
         ReDOCore.Warn("CreateCharacter: firstName too short")
@@ -146,7 +155,7 @@ function ReDOCore.CreateCharacter(accountId, firstName, lastName, callback)
         metadata = json.encode({})
     }
 
-    ReDOCore.DB.Table('characters')
+    DB.Table('characters')
         :Insert(charData, function(insertId)
             if not insertId then
                 ReDOCore.Error("Failed to create character for account %d", accountId)
@@ -198,7 +207,7 @@ end
     - callback: function(character) — the loaded character or nil
 ========================================================================= ]]
 
-function ReDOCore.SelectCharacter(src, characterId, accountId, callback)
+function PlayerModule.SelectCharacter(src, characterId, accountId, callback)
     if not src or not characterId or not accountId then
         ReDOCore.Error("SelectCharacter: source, characterId, accountId required")
         if callback then callback(nil) end
@@ -208,7 +217,7 @@ function ReDOCore.SelectCharacter(src, characterId, accountId, callback)
     -- Fetch the character from the database.
     -- We verify account_id matches to prevent a player from loading
     -- someone else's character by guessing IDs.
-    ReDOCore.DB.Table('characters')
+    DB.Table('characters')
         :Where('id', characterId)
         :Where('account_id', accountId)
         :First(function(char)
@@ -241,13 +250,13 @@ function ReDOCore.SelectCharacter(src, characterId, accountId, callback)
             end
 
             -- Store as the active character for this player.
-            ReDOCore.ActiveCharacters[src] = char
+            PlayerModule.ActiveCharacters[src] = char
 
             ReDOCore.Info("Player %s selected character: %s %s (ID: %d)",
                 GetPlayerName(src) or src, char.first_name, char.last_name, char.id)
 
             -- Update player count.
-            ReDOCore.PlayerCount = ReDOCore.PlayerCount + 1
+            PlayerModule.PlayerCount = PlayerModule.PlayerCount + 1
 
             -- Fire an event that other resources can listen to.
             -- This is how other scripts know "a player is now fully loaded."
@@ -269,7 +278,7 @@ end
     - charData: the character table from ReDOCore.ActiveCharacters[source]
 ========================================================================= ]]
 
-function ReDOCore.SaveCharacter(charData)
+function PlayerModule.SaveCharacter(charData)
     if not charData or not charData.id then
         ReDOCore.Error("SaveCharacter: valid character data required")
         return
@@ -305,7 +314,7 @@ function ReDOCore.SaveCharacter(charData)
         metadata = metadataJson
     }
 
-    ReDOCore.DB.Table('characters')
+    DB.Table('characters')
         :Where('id', charData.id)
         :Update(updateData, function(affected)
             if affected and affected > 0 then
@@ -327,7 +336,7 @@ end
     - callback: function(success)
 ========================================================================= ]]
 
-function ReDOCore.DeleteCharacter(characterId, accountId, callback)
+function PlayerModule.DeleteCharacter(characterId, accountId, callback)
     if not characterId or not accountId then
         ReDOCore.Error("DeleteCharacter: characterId and accountId required")
         if callback then callback(false) end
@@ -335,7 +344,7 @@ function ReDOCore.DeleteCharacter(characterId, accountId, callback)
     end
 
     -- Verify ownership before deleting.
-    ReDOCore.DB.Table('characters')
+    DB.Table('characters')
         :Where('id', characterId)
         :Where('account_id', accountId)
         :First(function(char)
@@ -345,7 +354,7 @@ function ReDOCore.DeleteCharacter(characterId, accountId, callback)
                 return
             end
 
-            ReDOCore.DB.Table('characters')
+            DB.Table('characters')
                 :Where('id', characterId)
                 :Delete(function(affected)
                     if affected and affected > 0 then
@@ -374,7 +383,7 @@ CreateThread(function()
         Wait(saveInterval)
 
         local count = 0
-        for src, charData in pairs(ReDOCore.ActiveCharacters) do
+        for src, charData in pairs(PlayerModule.ActiveCharacters) do
             -- Get current position before saving.
             local ped = GetPlayerPed(src)
             if ped and ped > 0 then
@@ -388,7 +397,7 @@ CreateThread(function()
                 }
             end
 
-            ReDOCore.SaveCharacter(charData)
+            PlayerModule.SaveCharacter(charData)
             count = count + 1
         end
 

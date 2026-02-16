@@ -30,6 +30,12 @@
 local ReDOCore = exports['Core']:GetCoreObject()
 local Config = ReDOCore.Config
 
+-- Get DB/MySQL from the database resource (not from Core).
+-- With lua54, each resource has its own Lua state, so cross-resource
+-- table mutations don't propagate. We get these directly.
+local DB = exports['database']:GetDB()
+local MySQL = exports['database']:GetMySQL()
+
 --[[ =========================================================================
     IDENTIFIER EXTRACTION
     
@@ -133,7 +139,7 @@ local function CheckBan(identifiers, callback)
         table.concat(placeholders, ", ")
     )
 
-    ReDOCore.MySQL.FetchOne(query, idsToCheck, function(ban)
+    MySQL.FetchOne(query, idsToCheck, function(ban)
         if ban then
             -- Found an active ban. Return the ban info.
             callback(true, ban)
@@ -183,7 +189,7 @@ local function CheckWhitelist(identifiers, callback)
     -- Determine which column to search by
     local column = identifiers.steam and "steam" or "license"
 
-    ReDOCore.DB.Table('accounts')
+    DB.Table('accounts')
         :Where(column, primaryId)
         :First(function(account)
             callback(account ~= nil)
@@ -286,12 +292,10 @@ AddEventHandler('playerConnecting', function(name, setKickReason, deferrals)
             ReDOCore.Info("Player authorized: %s (%s)", name, identifiers.steam)
 
             -- Store identifiers so other files can access them.
-            -- We attach them to a temporary table keyed by source.
-            -- Other files (sv_accounts.lua) will use this to find/create accounts.
-            if not ReDOCore.PendingPlayers then
-                ReDOCore.PendingPlayers = {}
-            end
-            ReDOCore.PendingPlayers[src] = {
+            -- PlayerModule is our resource-local shared table (defined in sv_shared.lua).
+            -- We use this instead of ReDOCore because ReDOCore is a cross-resource proxy
+            -- and mutations on it don't propagate to other files with lua54.
+            PlayerModule.PendingPlayers[src] = {
                 name = name,
                 identifiers = identifiers
             }
@@ -318,12 +322,10 @@ AddEventHandler('playerDropped', function(reason)
     ReDOCore.Info("Player dropped: %s (reason: %s)", GetPlayerName(src) or "Unknown", reason)
 
     -- Save character data if they had one loaded.
-    -- ReDOCore.ActiveCharacters is set up in sv_characters.lua
-    if ReDOCore.ActiveCharacters and ReDOCore.ActiveCharacters[src] then
-        local charData = ReDOCore.ActiveCharacters[src]
+    if PlayerModule.ActiveCharacters[src] then
+        local charData = PlayerModule.ActiveCharacters[src]
 
         -- Get their current position to save it.
-        -- GetEntityCoords gets the position of their ped (character model).
         local ped = GetPlayerPed(src)
         if ped and ped > 0 then
             local coords = GetEntityCoords(ped)
@@ -337,21 +339,19 @@ AddEventHandler('playerDropped', function(reason)
         end
 
         -- Save to database (function defined in sv_characters.lua).
-        if ReDOCore.SaveCharacter then
-            ReDOCore.SaveCharacter(charData)
+        if PlayerModule.SaveCharacter then
+            PlayerModule.SaveCharacter(charData)
         end
 
         -- Clean up
-        ReDOCore.ActiveCharacters[src] = nil
+        PlayerModule.ActiveCharacters[src] = nil
     end
 
     -- Clean up pending player data
-    if ReDOCore.PendingPlayers then
-        ReDOCore.PendingPlayers[src] = nil
-    end
+    PlayerModule.PendingPlayers[src] = nil
 
     -- Update player count
-    ReDOCore.PlayerCount = math.max(0, ReDOCore.PlayerCount - 1)
+    PlayerModule.PlayerCount = math.max(0, PlayerModule.PlayerCount - 1)
 end)
 
 ReDOCore.Info("Auth system loaded")

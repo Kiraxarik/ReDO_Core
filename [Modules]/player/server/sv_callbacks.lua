@@ -37,6 +37,8 @@
 
 local ReDOCore = exports['Core']:GetCoreObject()
 local Config = ReDOCore.Config
+local DB = exports['database']:GetDB()
+local MySQL = exports['database']:GetMySQL()
 
 --[[ =========================================================================
     SERVER CALLBACK HANDLER
@@ -61,7 +63,7 @@ local registeredCallbacks = {}
 --   source = the player who triggered it
 --   cb = function to call with the response data
 --   ... = any extra args the client sent
-function ReDOCore.RegisterServerCallback(name, handler)
+function PlayerModule.RegisterServerCallback(name, handler)
     if not name or not handler then
         ReDOCore.Error("RegisterServerCallback: name and handler required")
         return
@@ -79,6 +81,13 @@ RegisterNetEvent('framework:server:triggerCallback')
 AddEventHandler('framework:server:triggerCallback', function(name, requestId, ...)
     -- "source" inside an event handler = the player who sent the event.
     local src = source
+    local args = {...}
+
+    print(string.format("^3[SV CB DEBUG] Received callback: %s | requestId=%s | argCount=%d^7",
+        tostring(name), tostring(requestId), #args))
+    for i, v in ipairs(args) do
+        print(string.format("^3[SV CB DEBUG]   arg[%d] type=%s value=%s^7", i, type(v), tostring(v)))
+    end
 
     -- Look up the handler.
     local handler = registeredCallbacks[name]
@@ -107,9 +116,9 @@ end)
 -- GET ACCOUNT
 -- Client calls this right after connecting.
 -- Finds their account (or creates one), returns account data.
-ReDOCore.RegisterServerCallback('redo:getAccount', function(src, cb)
+PlayerModule.RegisterServerCallback('redo:getAccount', function(src, cb)
     -- Get the pending player info that sv_auth.lua stored.
-    local pending = ReDOCore.PendingPlayers and ReDOCore.PendingPlayers[src]
+    local pending = PlayerModule.PendingPlayers[src]
 
     if not pending then
         -- Player somehow called this without going through auth.
@@ -121,15 +130,15 @@ ReDOCore.RegisterServerCallback('redo:getAccount', function(src, cb)
             discord = GetPlayerIdentifierByType(src, 'discord')
         }
 
-        ReDOCore.GetOrCreateAccount(GetPlayerName(src) or "Unknown", identifiers, function(account)
+        PlayerModule.GetOrCreateAccount(GetPlayerName(src) or "Unknown", identifiers, function(account)
             cb(account)
         end)
         return
     end
 
-    ReDOCore.GetOrCreateAccount(pending.name, pending.identifiers, function(account)
+    PlayerModule.GetOrCreateAccount(pending.name, pending.identifiers, function(account)
         -- Clean up pending data, we don't need it anymore.
-        ReDOCore.PendingPlayers[src] = nil
+        PlayerModule.PendingPlayers[src] = nil
         cb(account)
     end)
 end)
@@ -137,14 +146,14 @@ end)
 -- GET CHARACTERS
 -- Client calls this after getting their account.
 -- Returns array of characters for the character selection screen.
-ReDOCore.RegisterServerCallback('redo:getCharacters', function(src, cb, accountId)
+PlayerModule.RegisterServerCallback('redo:getCharacters', function(src, cb, accountId)
     if not accountId then
         ReDOCore.Error("redo:getCharacters called without accountId by player %d", src)
         cb({})
         return
     end
 
-    ReDOCore.GetCharacters(accountId, function(characters)
+    PlayerModule.GetCharacters(accountId, function(characters)
         cb(characters)
     end)
 end)
@@ -152,7 +161,7 @@ end)
 -- CREATE CHARACTER
 -- Client calls this from the "New Character" form.
 -- Creates a character and returns it.
-ReDOCore.RegisterServerCallback('redo:createCharacter', function(src, cb, accountId, firstName, lastName)
+PlayerModule.RegisterServerCallback('redo:createCharacter', function(src, cb, accountId, firstName, lastName)
     if not accountId or not firstName or not lastName then
         ReDOCore.Error("redo:createCharacter missing parameters from player %d", src)
         cb(nil)
@@ -160,9 +169,9 @@ ReDOCore.RegisterServerCallback('redo:createCharacter', function(src, cb, accoun
     end
 
     -- Check if they've hit their character limit.
-    ReDOCore.GetCharacters(accountId, function(existingChars)
+    PlayerModule.GetCharacters(accountId, function(existingChars)
         -- Get the account to check max_characters.
-        ReDOCore.DB.Table('accounts')
+        DB.Table('accounts')
             :Where('id', accountId)
             :First(function(account)
                 local maxChars = (account and account.max_characters) or 3
@@ -174,7 +183,7 @@ ReDOCore.RegisterServerCallback('redo:createCharacter', function(src, cb, accoun
                     return
                 end
 
-                ReDOCore.CreateCharacter(accountId, firstName, lastName, function(newChar)
+                PlayerModule.CreateCharacter(accountId, firstName, lastName, function(newChar)
                     cb(newChar)
                 end)
             end)
@@ -184,21 +193,21 @@ end)
 -- SELECT CHARACTER
 -- Client calls this when they click "Play" on a character.
 -- Loads the character and puts them in the world.
-ReDOCore.RegisterServerCallback('redo:selectCharacter', function(src, cb, characterId, accountId)
+PlayerModule.RegisterServerCallback('redo:selectCharacter', function(src, cb, characterId, accountId)
     if not characterId or not accountId then
         ReDOCore.Error("redo:selectCharacter missing parameters from player %d", src)
         cb(nil)
         return
     end
 
-    ReDOCore.SelectCharacter(src, characterId, accountId, function(charData)
+    PlayerModule.SelectCharacter(src, characterId, accountId, function(charData)
         cb(charData)
     end)
 end)
 
 -- DELETE CHARACTER
 -- Client calls this from character select (with confirmation).
-ReDOCore.RegisterServerCallback('redo:deleteCharacter', function(src, cb, characterId, accountId)
+PlayerModule.RegisterServerCallback('redo:deleteCharacter', function(src, cb, characterId, accountId)
     if not characterId or not accountId then
         ReDOCore.Error("redo:deleteCharacter missing parameters from player %d", src)
         cb(false)
@@ -206,14 +215,14 @@ ReDOCore.RegisterServerCallback('redo:deleteCharacter', function(src, cb, charac
     end
 
     -- Make sure they don't have this character currently loaded.
-    local active = ReDOCore.ActiveCharacters[src]
+    local active = PlayerModule.ActiveCharacters[src]
     if active and active.id == characterId then
         ReDOCore.Warn("Player %d tried to delete their active character", src)
         cb(false)
         return
     end
 
-    ReDOCore.DeleteCharacter(characterId, accountId, function(success)
+    PlayerModule.DeleteCharacter(characterId, accountId, function(success)
         cb(success)
     end)
 end)

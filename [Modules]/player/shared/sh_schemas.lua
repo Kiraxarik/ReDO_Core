@@ -29,7 +29,7 @@
 -- Get the framework object from the Core resource.
 -- exports['Core'] calls into the Core resource.
 -- :GetCoreObject() runs the function we defined in sv_main.lua.
--- This gives us access to ReDOCore.DB.RegisterSchema and everything else.
+-- This gives us access to DB.RegisterSchema and everything else.
 local ReDOCore = exports['Core']:GetCoreObject()
 
 -- Schema registration only runs on the SERVER.
@@ -39,12 +39,13 @@ if not IsDuplicityVersion() then
     return
 end
 
--- Wait briefly for the database module to initialize.
--- The database resource sets up ReDOCore.DB when it starts.
--- Since we depend on 'database' in our fxmanifest, it should
--- already be loaded, but we check just in case.
-if not ReDOCore.DB then
-    ReDOCore.Error("Player module: ReDOCore.DB not available! Is the database module running?")
+-- Get the DB subsystem from the database resource.
+-- With lua54, each resource has its own Lua state. The DB object lives
+-- in the database resource, so we get it directly from there (not from Core).
+local DB = exports['database']:GetDB()
+
+if not DB then
+    ReDOCore.Error("Player module: DB not available! Is the database module running?")
     return
 end
 
@@ -56,7 +57,7 @@ end
     
     A player connects -> we find/create their account -> they pick a character.
 ========================================================================= ]]
-ReDOCore.DB.RegisterSchema('accounts', {
+DB.RegisterSchema('accounts', {
     -- Primary key: auto-incrementing integer.
     -- Every account gets a unique number (1, 2, 3...).
     -- "primary = true" makes this the PRIMARY KEY in MySQL.
@@ -150,7 +151,7 @@ ReDOCore.DB.RegisterSchema('accounts', {
     This is a FOREIGN KEY relationship:
         accounts.id (1) ──── (many) characters.account_id
 ========================================================================= ]]
-ReDOCore.DB.RegisterSchema('characters', {
+DB.RegisterSchema('characters', {
     id = {
         type = "INT",
         auto_increment = true,
@@ -257,7 +258,7 @@ ReDOCore.DB.RegisterSchema('characters', {
     When a player connects, we check: "does any ACTIVE ban exist
     where the identifier matches any of this player's identifiers?"
 ========================================================================= ]]
-ReDOCore.DB.RegisterSchema('bans', {
+DB.RegisterSchema('bans', {
     id = {
         type = "INT",
         auto_increment = true,
@@ -297,7 +298,8 @@ ReDOCore.DB.RegisterSchema('bans', {
     -- For temp bans, you'd set this to a future date.
     -- On connect, check: expires_at IS NULL OR expires_at > NOW()
     expires_at = {
-        type = "TIMESTAMP"
+        type = "DATETIME",
+        default = "NULL"
     },
 
     -- Is this ban currently active?

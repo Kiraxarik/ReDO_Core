@@ -18,6 +18,8 @@
 
 local ReDOCore = exports['Core']:GetCoreObject()
 local Config = ReDOCore.Config
+local DB = exports['database']:GetDB()
+local MySQL = exports['database']:GetMySQL()
 
 --[[ =========================================================================
     FIND ACCOUNT
@@ -30,7 +32,7 @@ local Config = ReDOCore.Config
     - callback: function(account) — returns account row or nil
 ========================================================================= ]]
 
-function ReDOCore.FindAccount(identifiers, callback)
+function PlayerModule.FindAccount(identifiers, callback)
     if not identifiers then
         ReDOCore.Error("FindAccount: identifiers required")
         callback(nil)
@@ -39,7 +41,7 @@ function ReDOCore.FindAccount(identifiers, callback)
 
     -- Try Steam first (it's our primary identifier).
     if identifiers.steam then
-        ReDOCore.DB.Table('accounts')
+        DB.Table('accounts')
             :Where('steam', identifiers.steam)
             :First(function(account)
                 if account then
@@ -52,14 +54,14 @@ function ReDOCore.FindAccount(identifiers, callback)
                 -- This handles the case where a player previously connected
                 -- without Steam and now has it, or vice versa.
                 if identifiers.license then
-                    ReDOCore.DB.Table('accounts')
+                    DB.Table('accounts')
                         :Where('license', identifiers.license)
                         :First(function(accountByLicense)
                             if accountByLicense then
                                 ReDOCore.DebugFlag('Player_Load', "Account found by License: %s (ID: %d)", identifiers.license, accountByLicense.id)
 
                                 -- Update their Steam ID on the account since we have it now.
-                                ReDOCore.DB.Table('accounts')
+                                DB.Table('accounts')
                                     :Where('id', accountByLicense.id)
                                     :Update({ steam = identifiers.steam }, function() end)
                             end
@@ -71,7 +73,7 @@ function ReDOCore.FindAccount(identifiers, callback)
             end)
     elseif identifiers.license then
         -- No Steam at all, search by license only.
-        ReDOCore.DB.Table('accounts')
+        DB.Table('accounts')
             :Where('license', identifiers.license)
             :First(function(account)
                 callback(account)
@@ -94,7 +96,7 @@ end
     - callback: function(account) — returns the new account data or nil
 ========================================================================= ]]
 
-function ReDOCore.CreateAccount(playerName, identifiers, callback)
+function PlayerModule.CreateAccount(playerName, identifiers, callback)
     if not identifiers then
         ReDOCore.Error("CreateAccount: identifiers required")
         callback(nil)
@@ -116,7 +118,7 @@ function ReDOCore.CreateAccount(playerName, identifiers, callback)
 
     -- Insert into database.
     -- The callback gives us the insertId (the auto-incremented ID).
-    ReDOCore.DB.Table('accounts')
+    DB.Table('accounts')
         :Insert(accountData, function(insertId)
             if not insertId then
                 ReDOCore.Error("Failed to create account for: %s", playerName)
@@ -151,12 +153,12 @@ end
     "Find the account, or make one if it doesn't exist."
 ========================================================================= ]]
 
-function ReDOCore.GetOrCreateAccount(playerName, identifiers, callback)
-    ReDOCore.FindAccount(identifiers, function(account)
+function PlayerModule.GetOrCreateAccount(playerName, identifiers, callback)
+    PlayerModule.FindAccount(identifiers, function(account)
         if account then
             -- Account exists. Update discord if we have it now and didn't before.
             if identifiers.discord and (not account.discord or account.discord == '') then
-                ReDOCore.DB.Table('accounts')
+                DB.Table('accounts')
                     :Where('id', account.id)
                     :Update({ discord = identifiers.discord }, function() end)
                 account.discord = identifiers.discord
@@ -165,7 +167,7 @@ function ReDOCore.GetOrCreateAccount(playerName, identifiers, callback)
             callback(account)
         else
             -- No account. Create one.
-            ReDOCore.CreateAccount(playerName, identifiers, callback)
+            PlayerModule.CreateAccount(playerName, identifiers, callback)
         end
     end)
 end

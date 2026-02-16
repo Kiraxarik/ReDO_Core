@@ -35,23 +35,10 @@ local spawnCamera = nil
 
 local function FreezePlayer(state)
     local ped = PlayerPedId()
+    if not ped or ped == 0 then return end
 
-    -- SetEntityVisible: hide/show the ped model.
-    -- When hidden, they're invisible but still technically "there."
-    SetEntityVisible(ped, not state)
-
-    -- SetEntityInvincible: can't take damage while frozen.
-    SetEntityInvincible(ped, state)
-
-    -- FreezeEntityPosition: can't move.
+    -- Only use the safest, most basic native
     FreezeEntityPosition(ped, state)
-
-    -- SetEntityCollision: disable physics so they don't bump into things.
-    if state then
-        SetEntityCollision(ped, false, false)
-    else
-        SetEntityCollision(ped, true, true)
-    end
 end
 
 --[[ =========================================================================
@@ -68,7 +55,7 @@ function SpawnPlayerAtPosition(charData)
 
     -- Default to Valentine if position is missing.
     if not pos or not pos.x then
-        local spawn = Config.Authorization.DefaultSpawn
+        local spawn = ReDOCore.Config.Authorization.DefaultSpawn
         pos = { x = spawn.x, y = spawn.y, z = spawn.z, w = spawn.w or 0.0 }
     end
 
@@ -115,7 +102,7 @@ local function SetupSpawnCamera()
     -- Position the camera somewhere scenic.
     -- This is looking over Valentine. Adjust to wherever you want.
     SetCamCoord(spawnCamera, -1038.0, -2740.0, 15.0)
-    SetCamRot(spawnCamera, -10.0, 0.0, 30.0, 2)
+    SetCamRot(spawnCamera, -10.0, 0.0, 30.0)
 
     -- Activate it. RenderScriptCams tells the game to use our camera
     -- instead of the normal player camera.
@@ -132,26 +119,41 @@ end
 
 CreateThread(function()
     -- Wait for the network session to be ready.
-    -- Without this, natives like PlayerPedId() might not work yet.
     while not NetworkIsSessionStarted() do
         Wait(100)
     end
 
-    -- Wait for the player ped to exist.
+    -- Wait for the player ped to exist and be valid.
     while not NetworkIsPlayerActive(PlayerId()) do
         Wait(100)
     end
 
+    -- Extra safety: wait for ped to actually be usable
+    local ped = PlayerPedId()
+    local attempts = 0
+    while (not ped or ped == 0 or not DoesEntityExist(ped)) and attempts < 100 do
+        Wait(100)
+        ped = PlayerPedId()
+        attempts = attempts + 1
+    end
+
+    -- Another safety wait for world to settle
+    Wait(2000)
+
     ReDOCore.Info("Session started, setting up character selection...")
 
     -- Freeze the player so they don't fall or move during selection.
-    FreezePlayer(true)
+    -- Use pcall so a bad native doesn't crash the game
+    pcall(function()
+        FreezePlayer(true)
+    end)
 
     -- Set up the cinematic camera.
-    SetupSpawnCamera()
+    pcall(function()
+        SetupSpawnCamera()
+    end)
 
     -- Tell the character selection system to start.
-    -- This event is handled in cl_charselect.lua.
     TriggerEvent('redo:client:openCharacterSelect')
 end)
 

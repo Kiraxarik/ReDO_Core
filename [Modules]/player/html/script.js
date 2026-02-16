@@ -41,12 +41,25 @@ window.addEventListener('message', function(event) {
 
 async function nuiCallback(callbackName, data) {
     try {
-        const response = await fetch('https://cfx-nui-player/' + callbackName, {
+        // GetParentResourceName is available in NUI context
+        var resourceName = typeof GetParentResourceName === 'function' ? GetParentResourceName() : 'player';
+        var url = 'https://cfx-nui-' + resourceName + '/' + callbackName;
+        console.log('[NUI JS] Fetching: ' + url);
+        
+        const response = await fetch(url, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(data || {})
         });
-        return await response.json();
+        
+        var text = await response.text();
+        console.log('[NUI JS] Response for ' + callbackName + ': "' + text + '"');
+        
+        if (!text || text.length === 0) {
+            return { ok: false, message: 'Empty response from server' };
+        }
+        
+        return JSON.parse(text);
     } catch (err) {
         console.error('NUI callback error:', err);
         return { ok: false, message: 'Communication error' };
